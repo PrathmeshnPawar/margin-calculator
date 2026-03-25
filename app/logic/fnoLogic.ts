@@ -256,27 +256,26 @@ export function useFnOLogic() {
                 }
             }
 
-            /* ── 3. Price selection ── */
-            // Premium  → MID price, floored to tick (fairest live price)
-            // Margin   → BID (sell) or ASK (buy), floored to tick
-            // Fallback → LTP → CLOSE (when market is illiquid / pre-open)
+            /* ── 3. Single price source (same for margin API + premium) ── */
+            // Spread validity — reject if spread > 10% of ask (too wide = illiquid)
+            const isSpreadValid = bid > 0 && ask > 0 && (ask - bid) / ask < 0.1;
 
-            const fallback = ltp || close || effectivePrice;
+            // Price chain: LTP (if spread valid) → mid → close → effectivePrice
+            const rawPrice = ltp > 0 && isSpreadValid
+                ? ltp
+                : isSpreadValid
+                    ? (bid + ask) / 2
+                    : close || effectivePrice;
 
-            // Mid price for premium
-            const mid = bid > 0 && ask > 0
-                ? Math.floor(((bid + ask) / 2) / 0.05) * 0.05
-                : fallback;
-            const premiumPrice = mid > 0 ? mid : fallback;
+            // Round to nearest tick (Math.round — no directional bias)
+            const roundToTick = (x: number) => Math.round(x / 0.05) * 0.05;
+            const price = roundToTick(rawPrice) || effectivePrice;
 
-            // Bid/Ask for margin API ltp
-            const marginPrice = side === "Buy"
-                ? (ask > 0 ? Math.floor(ask / 0.05) * 0.05 : fallback)
-                : (bid > 0 ? Math.floor(bid / 0.05) * 0.05 : fallback);
+            console.log("Price selection:", { ltp, bid, ask, close, isSpreadValid, rawPrice, price });
 
             const marginLtp = product === "Futures"
                 ? 0.01
-                : (marginPrice > 0 ? marginPrice : 1);
+                : (price > 0 ? price : 1);
 
             /* ── 4. Margin calculation ── */
             const exchange_segment = EXCHANGE_SEGMENT[exchange as Exchange];
@@ -291,9 +290,9 @@ export function useFnOLogic() {
             const spanFinal = isFinite(spanMargin) ? spanMargin : 0;
             const expFinal  = isFinite(expMargin)  ? expMargin  : 0;
 
-            /* ── 5. Premium — MID price ── */
-            const rawPremium = product === "Options" && premiumPrice > 0
-                ? premiumPrice * Number(qty)
+            /* ── 5. Premium — same price as margin API ── */
+            const rawPremium = product === "Options" && price > 0
+                ? price * Number(qty)
                 : 0;
 
             // BUY → positive (buyer pays), SELL → negative (seller receives)
@@ -311,7 +310,7 @@ export function useFnOLogic() {
                         ? {
                             ...item,
                             token,
-                            ltp:           premiumPrice,
+                            ltp:           price,
                             initialMargin: Number(spanFinal.toFixed(2)),
                             exposure:      Number(expFinal.toFixed(2)),
                             netPremium:    Number(premiumSigned.toFixed(2)),

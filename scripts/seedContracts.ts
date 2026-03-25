@@ -3,6 +3,7 @@ dotenv.config({ path: ".env.local" });
 
 import { MongoClient } from "mongodb";
 import * as csv from "csv-parse/sync";
+import crypto from "crypto";
 
 const client = new MongoClient(process.env.MONGODB_URI!);
 
@@ -52,6 +53,18 @@ async function seed() {
 
         const text = await res.text();
         const cleanText = text.replace(/^\uFEFF/, ""); // Strip BOM
+
+        // ── Hash check — skip insert if file hasn't changed ──
+        const hash = crypto.createHash("md5").update(cleanText).digest("hex");
+        const metaCol = db.collection("meta");
+        const existing = await metaCol.findOne({ key: "contracts_hash" });
+
+        if (existing?.value === hash) {
+            console.log(`✅ Contract file unchanged (hash: ${hash}) — skipping insert`);
+            return;
+        }
+
+        console.log(`New contract file detected (hash: ${hash}) — proceeding with insert`);
 
         const rows = csv.parse(cleanText, {
             columns: true,
@@ -116,7 +129,14 @@ async function seed() {
         await collection.createIndex({ symbol: 1, exchange_seg: 1 });
         await collection.createIndex({ symbol: 1, expiry_date: 1, strike_price: 1, option_type: 1 });
 
-        console.log(`✅ Seed complete — ${inserted} contracts upserted`);
+        // Save hash so next run can compare
+        await metaCol.updateOne(
+            { key: "contracts_hash" },
+            { $set: { value: hash, updatedAt: new Date(), rowCount: docs.length } },
+            { upsert: true }
+        );
+
+        console.log(`✅ Seed complete — ${inserted} contracts inserted`);
 
     } catch (err) {
         console.error("❌ Seed failed:", err);

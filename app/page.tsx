@@ -26,14 +26,15 @@ async function fetchPrice(greekToken: number, side: "Buy" | "Sell"): Promise<num
         const text = await res.text();
         if (!text) return 0;
 
-        // Route now returns { ltp, bid, ask } directly
-        const { ltp = 0, bid = 0, ask = 0 } = JSON.parse(text);
+        const { ltp = 0, close = 0, bid = 0, ask = 0 } = JSON.parse(text);
 
-        // BUY  → ask (what you pay),  fallback to LTP if ask is 0 (illiquid/deep OTM)
-        // SELL → bid (what you get),  fallback to LTP if bid is 0
-        if (side === "Buy")  return ask > 0 ? ask : ltp;
-        if (side === "Sell") return bid > 0 ? bid : ltp;
-        return ltp;
+        // Fallback chain: bid/ask (live) → ltp (last trade) → close (prev day)
+        // close is used after market hours when bid/ask/ltp are all 0
+        const fallback = ltp || close;
+
+        if (side === "Buy")  return ask > 0 ? ask : fallback;
+        if (side === "Sell") return bid > 0 ? bid : fallback;
+        return fallback;
     } catch {
         return 0;
     }
@@ -365,8 +366,8 @@ export default function FnOMarginCalculator() {
                     </div>
                     <div className="p-4 lg:p-5 xl:p-6 space-y-3">
                         <SummaryRow label="Net Premium"     value={summary.netPremium} />
-                        <SummaryRow label="Span Margin"     value={summary.span} />
-                        <SummaryRow label="Exposure Margin" value={summary.exposure} />
+                        <SummaryRow label="Span Margin"     value={Math.max(0, summary.span)} />
+                        <SummaryRow label="Exposure Margin" value={Math.max(0, summary.exposure)} />
 
                         <div className="pt-3 border-t flex justify-between items-center">
                             <span className="text-sm font-bold text-gray-900">Total (Without Benefit)</span>
@@ -457,7 +458,7 @@ export default function FnOMarginCalculator() {
                                         <td className="px-3 py-3 lg:px-4 tabular-nums whitespace-nowrap">
                                             {row.isCalculating
                                                 ? <span className="inline-block w-16 h-4 bg-gray-200 rounded animate-pulse"/>
-                                                : formatCurrency(row.initialMargin)
+                                                : formatCurrency(Math.max(0, row.initialMargin))
                                             }
                                         </td>
                                         <td className="px-3 py-3 lg:px-4 tabular-nums whitespace-nowrap">
@@ -485,8 +486,8 @@ export default function FnOMarginCalculator() {
                                 ))}
                                 <tr className="bg-gray-50 font-bold border-t-2 border-border/40">
                                     <td className="px-3 py-3 lg:px-4" colSpan={6}>Total</td>
-                                    <td className="px-3 py-3 lg:px-4 tabular-nums">{formatCurrency(summary.span)}</td>
-                                    <td className="px-3 py-3 lg:px-4 tabular-nums">{formatCurrency(summary.exposure)}</td>
+                                    <td className="px-3 py-3 lg:px-4 tabular-nums">{formatCurrency(Math.max(0, summary.span))}</td>
+                                    <td className="px-3 py-3 lg:px-4 tabular-nums">{formatCurrency(Math.max(0, summary.exposure))}</td>
                                     <td className="px-3 py-3 lg:px-4 tabular-nums">{formatCurrency(summary.total)}</td>
                                     <td />
                                 </tr>
