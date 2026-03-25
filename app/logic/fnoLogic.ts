@@ -241,12 +241,15 @@ export function useFnOLogic() {
 
             if (product === "Options" && greekToken) {
                 try {
+                   
                     const quoteRes = await fetch("/api/greeksoft/quote", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ greekToken }),
                     });
+                     
                     const quote = await quoteRes.json();
+                    console.log("fetch quote for options",quoteRes);
                     bid   = quote.bid   ?? 0;
                     ask   = quote.ask   ?? 0;
                     ltp   = quote.ltp   || effectivePrice;

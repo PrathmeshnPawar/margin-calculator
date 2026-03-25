@@ -16,7 +16,9 @@ const optionTypes: OptionType[] = ["Calls", "Puts"];
 
 /* ── Fetch effective price using bid/ask (broker-accurate) ── */
 async function fetchPrice(greekToken: number, side: "Buy" | "Sell"): Promise<number> {
+    
     try {
+        console.log("fetchprice before call", fetchPrice);
         const res = await fetch("/api/greeksoft/quote", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -24,6 +26,7 @@ async function fetchPrice(greekToken: number, side: "Buy" | "Sell"): Promise<num
         });
         if (!res.ok) return 0;
         const text = await res.text();
+        console.log("Fetch price response: ",res)
         if (!text) return 0;
 
         const { ltp = 0, close = 0, bid = 0, ask = 0 } = JSON.parse(text);

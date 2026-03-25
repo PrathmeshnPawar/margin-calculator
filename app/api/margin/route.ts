@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 
 async function getCredentials(): Promise<{ sessionToken: string; gcid: string }> {
-    const res = await fetch(
-        `http://localhost:3000/api/greeksoft/session`
-    );
+    // Use NEXT_PUBLIC_BASE_URL — never hardcode localhost (breaks in production)
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+    const res = await fetch(`${baseUrl}/api/greeksoft/session`);
     const data = await res.json();
     return { sessionToken: data.sessionToken, gcid: data.gcid };
 }
@@ -13,11 +13,15 @@ export async function POST(request: Request) {
         const body = await request.json();
         const gscid = process.env.GSCID;
 
-        if (!gscid) return NextResponse.json({ error: 'GSCID not configured' }, { status: 500 });
+        if (!gscid) {
+            return NextResponse.json({ error: "GSCID not configured" }, { status: 500 });
+        }
 
         const { sessionToken } = await getCredentials();
 
-        if (!sessionToken) return NextResponse.json({ error: 'Session token unavailable' }, { status: 401 });
+        if (!sessionToken) {
+            return NextResponse.json({ error: "Session token unavailable" }, { status: 401 });
+        }
 
         const safeBody = {
             request: {
@@ -25,6 +29,8 @@ export async function POST(request: Request) {
                 data: { ...body.request.data, gscid },
             },
         };
+
+        console.log("Margin API payload:", JSON.stringify(safeBody));
 
         const externalResponse = await fetch(
             "http://restapi.greeksoft.in:7267/MarginCalculatorAPI",
@@ -35,13 +41,31 @@ export async function POST(request: Request) {
                     "Authorization": sessionToken,
                 },
                 body: JSON.stringify(safeBody),
+                signal: AbortSignal.timeout(10000), // fail after 10s
             }
         );
 
+        console.log("Margin API status:", externalResponse.status);
+
+        // Read as text first — avoids "Unexpected end of JSON" if body is empty
         const raw = await externalResponse.text();
+        console.log("Margin API raw response:", raw?.slice(0, 300));
+
+        if (!raw) {
+            console.warn("Margin API returned empty body");
+            return NextResponse.json({ spanMargin: 0, expMargin: 0, netPremium: 0 });
+        }
+
+        if (!externalResponse.ok) {
+            console.error("Margin API error status:", externalResponse.status, raw);
+            // Return zeros so premium still shows in UI
+            return NextResponse.json({ spanMargin: 0, expMargin: 0, netPremium: 0 });
+        }
+
         const data = JSON.parse(raw);
 
         if (data?.response?.Error) {
+            console.warn("Greeksoft margin error:", data.response.Error);
             return NextResponse.json(
                 { error: `Greeksoft: ${data.response.Error}` },
                 { status: 502 }
@@ -50,7 +74,8 @@ export async function POST(request: Request) {
 
         const marginData = data?.response?.data;
         if (!marginData) {
-            return NextResponse.json({ error: 'Invalid response from Greeksoft' }, { status: 502 });
+            console.warn("No marginData in response:", data);
+            return NextResponse.json({ spanMargin: 0, expMargin: 0, netPremium: 0 });
         }
 
         return NextResponse.json({
@@ -60,6 +85,8 @@ export async function POST(request: Request) {
         });
 
     } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error("Margin route error:", error.message);
+        // Return zeros instead of crashing — premium will still show
+        return NextResponse.json({ spanMargin: 0, expMargin: 0, netPremium: 0 });
     }
 }
