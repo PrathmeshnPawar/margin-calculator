@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
 
-async function getCredentials(): Promise<{ sessionToken: string; gcid: string }> {
-    // Use NEXT_PUBLIC_BASE_URL — never hardcode localhost (breaks in production)
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
-    const res = await fetch(`${baseUrl}/api/greeksoft/session`);
-    const data = await res.json();
-    return { sessionToken: data.sessionToken, gcid: data.gcid };
+async function getCredentials() {
+    return await getSession();
 }
 
 export async function POST(request: Request) {
