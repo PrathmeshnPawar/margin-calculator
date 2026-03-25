@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
 
-async function getCredentials(): Promise<{ sessionToken: string; gcid: string }> {
-    const res = await fetch(
-        `http://localhost:3000/api/greeksoft/session`
-    );
-    const data = await res.json();
-    return { sessionToken: data.sessionToken, gcid: data.gcid };
+async function getCredentials() {
+    return await getSession();
 }
 
 export async function POST(request: Request) {
